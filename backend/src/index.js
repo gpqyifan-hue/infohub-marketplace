@@ -1,6 +1,16 @@
 import express from 'express';
 import cors from 'cors';
 import dotenv from 'dotenv';
+import {
+  hashPassword,
+  comparePassword,
+  signToken,
+  verifyToken,
+  createUserRecord,
+  findUserByUsername,
+  getUserById,
+  getUsersPublicProfile
+} from './authStore.js';
 
 dotenv.config();
 
@@ -50,25 +60,125 @@ const merchants = [
   }
 ];
 
+function requireAuth(req, res, next) {
+  const authHeader = req.headers.authorization || '';
+  const token = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : null;
+
+  if (!token) {
+    return res.status(401).json({ message: 'Authentication required' });
+  }
+
+  try {
+    const decoded = verifyToken(token);
+    const user = getUserById(decoded.id);
+
+    if (!user) {
+      return res.status(401).json({ message: 'User no longer exists' });
+    }
+
+    req.user = {
+      id: user.id,
+      username: user.username,
+      displayName: user.displayName,
+      role: user.role
+    };
+    return next();
+  } catch (error) {
+    return res.status(401).json({ message: 'Invalid or expired token' });
+  }
+}
+
 app.get('/api/health', (req, res) => {
   res.json({ ok: true, message: 'InfoHub backend is running' });
+});
+
+app.post('/api/register', async (req, res) => {
+  const { username, password, displayName, role } = req.body || {};
+
+  if (!username || !password || !displayName) {
+    return res.status(400).json({ message: 'username, password and displayName are required' });
+  }
+
+  if (findUserByUsername(username)) {
+    return res.status(409).json({ message: 'Username already exists' });
+  }
+
+  const hashedPassword = await hashPassword(password);
+  const user = createUserRecord({
+    username,
+    password: hashedPassword,
+    displayName,
+    role: role === 'merchant' ? 'merchant' : 'user'
+  });
+
+  const token = signToken(user);
+
+  return res.status(201).json({
+    message: 'User registered successfully',
+    token,
+    user: {
+      id: user.id,
+      username: user.username,
+      displayName: user.displayName,
+      role: user.role
+    }
+  });
+});
+
+app.post('/api/login', async (req, res) => {
+  const { username, password } = req.body || {};
+
+  if (!username || !password) {
+    return res.status(400).json({ message: 'username and password are required' });
+  }
+
+  const user = findUserByUsername(username);
+  if (!user) {
+    return res.status(401).json({ message: 'Invalid username or password' });
+  }
+
+  const isValid = await comparePassword(password, user.password);
+  if (!isValid) {
+    return res.status(401).json({ message: 'Invalid username or password' });
+  }
+
+  const token = signToken(user);
+
+  return res.json({
+    message: 'Login success',
+    token,
+    user: {
+      id: user.id,
+      username: user.username,
+      displayName: user.displayName,
+      role: user.role
+    }
+  });
+});
+
+app.get('/api/me', requireAuth, (req, res) => {
+  res.json({ user: req.user });
+});
+
+app.get('/api/users', requireAuth, (req, res) => {
+  res.json({ users: getUsersPublicProfile() });
 });
 
 app.get('/api/posts', (req, res) => {
   res.json({ posts });
 });
 
-app.post('/api/posts', (req, res) => {
-  const { author, title, content, type = '个人' } = req.body;
+app.post('/api/posts', requireAuth, (req, res) => {
+  const { title, content, type = '个人' } = req.body || {};
 
-  if (!author || !title || !content) {
-    return res.status(400).json({ message: 'author, title and content are required' });
+  if (!title || !content) {
+    return res.status(400).json({ message: 'title and content are required' });
   }
 
   const newPost = {
     id: Date.now(),
-    author,
-    type,
+    author: req.user.displayName,
+    type: req.user.role === 'merchant' ? '商家' : type,
     title,
     content,
     image: null,
@@ -83,11 +193,11 @@ app.get('/api/merchants', (req, res) => {
   res.json({ merchants });
 });
 
-app.post('/api/orders', (req, res) => {
-  const { merchant, item, amount, user } = req.body;
+app.post('/api/orders', requireAuth, (req, res) => {
+  const { merchant, item, amount } = req.body || {};
 
-  if (!merchant || !item || !amount || !user) {
-    return res.status(400).json({ message: 'merchant, item, amount and user are required' });
+  if (!merchant || !item || !amount) {
+    return res.status(400).json({ message: 'merchant, item and amount are required' });
   }
 
   return res.status(201).json({
@@ -96,7 +206,7 @@ app.post('/api/orders', (req, res) => {
       merchant,
       item,
       amount,
-      user,
+      user: req.user.displayName,
       status: 'pending_payment'
     }
   });
