@@ -1,266 +1,443 @@
-:root {
-  font-family: Inter, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-  line-height: 1.5;
-  font-weight: 400;
-  color: #1f2937;
-  background: #f2f4f8;
-}
+import { useEffect, useMemo, useState } from 'react';
 
-* {
-  box-sizing: border-box;
-}
+const defaultCenter = { latitude: 31.2304, longitude: 121.4737 };
 
-body {
-  margin: 0;
-  background: linear-gradient(180deg, #f8fafc 0%, #eef2ff 100%);
-}
+function App() {
+  const [screen, setScreen] = useState('feed');
+  const [authMode, setAuthMode] = useState('login');
+  const [token, setToken] = useState(localStorage.getItem('infohub_token') || '');
+  const [user, setUser] = useState(() => {
+    const raw = localStorage.getItem('infohub_user');
+    return raw ? JSON.parse(raw) : null;
+  });
+  const [form, setForm] = useState({ username: '', password: '', displayName: '', role: 'user' });
+  const [posts, setPosts] = useState([]);
+  const [merchants, setMerchants] = useState([]);
+  const [orderSummary, setOrderSummary] = useState('');
+  const [message, setMessage] = useState('');
+  const [searchTerm, setSearchTerm] = useState('川菜');
+  const [radiusKm, setRadiusKm] = useState(10);
+  const [mapMode, setMapMode] = useState('map');
+  const [centerPoint, setCenterPoint] = useState(defaultCenter);
+  const [searchResults, setSearchResults] = useState({ posts: [], merchants: [] });
 
-button {
-  border: none;
-  border-radius: 12px;
-  background: #4f46e5;
-  color: white;
-  padding: 0.75rem 1rem;
-  cursor: pointer;
-  font-weight: 600;
-}
+  const isLoggedIn = useMemo(() => Boolean(token && user), [token, user]);
 
-button:hover {
-  opacity: 0.95;
-}
+  useEffect(() => {
+    if (navigator.geolocation) {
+      navigator.geolocation.getCurrentPosition(
+        (position) => {
+          setCenterPoint({
+            latitude: position.coords.latitude,
+            longitude: position.coords.longitude
+          });
+        },
+        () => {
+          setCenterPoint(defaultCenter);
+        },
+        { enableHighAccuracy: true, timeout: 10000 }
+      );
+    }
 
-button:disabled {
-  opacity: 0.6;
-  cursor: not-allowed;
-}
+    loadData();
+  }, []);
 
-input,
-select,
-textarea {
-  width: 100%;
-  border: 1px solid #d1d5db;
-  border-radius: 10px;
-  padding: 0.75rem 0.9rem;
-  font: inherit;
-  background: white;
-}
+  async function loadData() {
+    try {
+      const [postsResponse, merchantsResponse] = await Promise.all([
+        fetch('/api/posts'),
+        fetch('/api/merchants')
+      ]);
 
-label {
-  display: block;
-  margin-bottom: 1rem;
-  font-weight: 600;
-  color: #374151;
-}
+      if (postsResponse.ok) {
+        const data = await postsResponse.json();
+        if (data.posts?.length) setPosts(data.posts);
+      }
 
-.app-shell {
-  max-width: 1200px;
-  margin: 0 auto;
-  padding: 24px;
-}
-
-.topbar {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  background: rgba(255, 255, 255, 0.8);
-  border: 1px solid #e5e7eb;
-  border-radius: 20px;
-  padding: 16px 24px;
-  box-shadow: 0 10px 25px rgba(15, 23, 42, 0.04);
-}
-
-.brand-wrap {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-}
-
-.logo {
-  width: 42px;
-  height: 42px;
-  border-radius: 12px;
-  display: grid;
-  place-items: center;
-  background: linear-gradient(135deg, #4f46e5, #7c3aed);
-  color: white;
-  font-weight: bold;
-}
-
-.topbar h1 {
-  margin: 0;
-  font-size: 1.4rem;
-}
-
-.topbar small {
-  color: #6b7280;
-}
-
-nav {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  flex-wrap: wrap;
-}
-
-.nav-button {
-  background: #eef2ff;
-  color: #3730a3;
-}
-
-.nav-button.active {
-  background: #4f46e5;
-  color: white;
-}
-
-.welcome-text {
-  color: #4b5563;
-  font-weight: 600;
-}
-
-.message-banner {
-  margin-top: 18px;
-  background: #ecfeff;
-  border: 1px solid #a5f3fc;
-  color: #0f172a;
-  padding: 12px 16px;
-  border-radius: 12px;
-}
-
-.content-grid {
-  display: grid;
-  grid-template-columns: 2fr 1fr;
-  gap: 24px;
-  margin-top: 24px;
-}
-
-.panel {
-  background: rgba(255, 255, 255, 0.8);
-  border: 1px solid #e5e7eb;
-  border-radius: 20px;
-  padding: 20px;
-  box-shadow: 0 10px 25px rgba(15, 23, 42, 0.04);
-}
-
-.auth-panel,
-.publish-panel {
-  grid-column: 1 / -1;
-}
-
-.section-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 16px;
-  gap: 12px;
-}
-
-.section-header h2 {
-  margin: 0;
-}
-
-.toggle-group {
-  display: flex;
-  gap: 8px;
-}
-
-.toggle-group button {
-  background: #e5e7eb;
-  color: #374151;
-}
-
-.toggle-group button.active {
-  background: #4f46e5;
-  color: white;
-}
-
-.auth-form,
-.publish-form {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.post-card,
-.merchant-card {
-  border: 1px solid #e5e7eb;
-  border-radius: 18px;
-  background: white;
-  padding: 18px;
-  margin-bottom: 16px;
-}
-
-.post-card img {
-  width: 100%;
-  height: 220px;
-  object-fit: cover;
-  border-radius: 14px;
-  margin-top: 12px;
-}
-
-.post-meta,
-.merchant-meta {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  flex-wrap: wrap;
-}
-
-.author {
-  font-weight: 700;
-}
-
-.tag {
-  background: #eef2ff;
-  color: #4338ca;
-  border-radius: 999px;
-  padding: 4px 8px;
-  font-size: 0.72rem;
-}
-
-.post-card h3,
-.merchant-card h3,
-.order-box h3 {
-  margin: 12px 0 8px;
-}
-
-.post-card p {
-  margin: 0;
-  color: #4b5563;
-}
-
-.post-actions {
-  display: flex;
-  justify-content: space-between;
-  color: #6b7280;
-  margin-top: 12px;
-  font-size: 0.9rem;
-}
-
-.merchant-card {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-}
-
-.merchant-meta {
-  color: #4b5563;
-  font-size: 0.82rem;
-}
-
-.order-box {
-  border-top: 1px solid #e5e7eb;
-  margin-top: 16px;
-  padding-top: 16px;
-}
-
-@media (max-width: 768px) {
-  .content-grid {
-    grid-template-columns: 1fr;
+      if (merchantsResponse.ok) {
+        const data = await merchantsResponse.json();
+        if (data.merchants?.length) setMerchants(data.merchants);
+      }
+    } catch (error) {
+      console.error('Load error:', error);
+    }
   }
 
-  .topbar {
-    flex-direction: column;
-    align-items: flex-start;
-    gap: 12px;
+  async function handleSearch() {
+    try {
+      const params = new URLSearchParams({
+        keyword: searchTerm,
+        latitude: String(centerPoint.latitude),
+        longitude: String(centerPoint.longitude),
+        radius: String(radiusKm)
+      });
+
+      const response = await fetch(`/api/search?${params.toString()}`);
+      const data = await response.json();
+      setSearchResults({
+        posts: data.posts || [],
+        merchants: data.merchants || []
+      });
+      setMessage(`已在 ${radiusKm} 公里范围内搜索：${searchTerm || '全部内容'}`);
+    } catch (error) {
+      setMessage('搜索失败');
+    }
   }
+
+  async function handleAuthSubmit(event) {
+    event.preventDefault();
+    const url = authMode === 'login' ? '/api/login' : '/api/register';
+
+    try {
+      const payload = {
+        username: form.username,
+        password: form.password,
+        ...(authMode === 'register' ? { displayName: form.displayName, role: form.role } : {})
+      };
+
+      const response = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+
+      const result = await response.json();
+      if (!response.ok) {
+        setMessage(result.message || '认证失败');
+        return;
+      }
+
+      localStorage.setItem('infohub_token', result.token);
+      localStorage.setItem('infohub_user', JSON.stringify(result.user));
+      setToken(result.token);
+      setUser(result.user);
+      setMessage(authMode === 'login' ? '登录成功' : '注册成功');
+      setScreen('feed');
+    } catch (error) {
+      setMessage('认证服务暂时不可用');
+    }
+  }
+
+  async function handleCreatePost(event) {
+    event.preventDefault();
+    const title = event.target.title.value;
+    const content = event.target.content.value;
+    const type = event.target.type.value;
+    const image = event.target.image.value;
+    const mediaType = event.target.mediaType.value;
+
+    try {
+      const response = await fetch('/api/posts', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`
+        },
+        body: JSON.stringify({
+          title,
+          content,
+          type,
+          image,
+          mediaType,
+          latitude: centerPoint.latitude,
+          longitude: centerPoint.longitude
+        })
+      });
+
+      const result = await response.json();
+      if (!response.ok) {
+        setMessage(result.message || '发布失败');
+        return;
+      }
+
+      setPosts((prev) => [result.post, ...prev]);
+      setMessage('发布成功');
+      event.target.reset();
+      setScreen('feed');
+    } catch (error) {
+      setMessage('发布失败，稍后重试');
+    }
+  }
+
+  async function placeOrder(merchantName) {
+    try {
+      const response = await fetch('/api/orders', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`
+        },
+        body: JSON.stringify({ merchant: merchantName, item: '今日特价套餐', amount: 68 })
+      });
+
+      const result = await response.json();
+      if (!response.ok) {
+        setOrderSummary(result.message || '订单失败');
+        return;
+      }
+
+      setOrderSummary(`${merchantName}：${result.message}`);
+    } catch (error) {
+      setOrderSummary('订单提交失败，请检查登录状态');
+    }
+  }
+
+  function logout() {
+    localStorage.removeItem('infohub_token');
+    localStorage.removeItem('infohub_user');
+    setToken('');
+    setUser(null);
+    setScreen('feed');
+    setMessage('已退出登录');
+  }
+
+  const mapPins = [
+    ...(searchResults.merchants || []).map((merchant) => ({
+      id: `merchant-${merchant.id}`,
+      type: '商家',
+      name: merchant.name,
+      category: merchant.category,
+      latitude: merchant.latitude,
+      longitude: merchant.longitude
+    })),
+    ...(searchResults.posts || []).map((post) => ({
+      id: `post-${post.id}`,
+      type: '内容',
+      name: post.title,
+      category: post.type,
+      latitude: post.latitude,
+      longitude: post.longitude
+    }))
+  ];
+
+  return (
+    <div className="app-shell">
+      <header className="topbar">
+        <div className="brand-wrap">
+          <div className="logo">C</div>
+          <div>
+            <h1>圆心</h1>
+            <small>以位置为中心 · 以内容为连接 · 以交易为闭环</small>
+          </div>
+        </div>
+
+        <nav>
+          <button className="nav-button" onClick={() => setScreen('feed')}>动态</button>
+          <button className="nav-button" onClick={() => setScreen('map')}>地图</button>
+          <button className="nav-button" onClick={() => setScreen('merchants')}>商户</button>
+          {isLoggedIn ? (
+            <>
+              <span className="welcome-text">欢迎，{user.displayName}</span>
+              <button className="nav-button" onClick={logout}>退出</button>
+            </>
+          ) : (
+            <button className="nav-button" onClick={() => setScreen('auth')}>登录 / 注册</button>
+          )}
+        </nav>
+      </header>
+
+      {message && <div className="message-banner">{message}</div>}
+
+      <main className="content-grid">
+        {screen === 'auth' && !isLoggedIn && (
+          <section className="panel auth-panel">
+            <div className="section-header">
+              <h2>{authMode === 'login' ? '登录' : '注册'}</h2>
+              <div className="toggle-group">
+                <button className={authMode === 'login' ? 'active' : ''} onClick={() => setAuthMode('login')}>登录</button>
+                <button className={authMode === 'register' ? 'active' : ''} onClick={() => setAuthMode('register')}>注册</button>
+              </div>
+            </div>
+
+            <form onSubmit={handleAuthSubmit} className="auth-form">
+              {authMode === 'register' && (
+                <>
+                  <label>
+                    显示名
+                    <input value={form.displayName} onChange={(e) => setForm({ ...form, displayName: e.target.value })} />
+                  </label>
+                  <label>
+                    角色
+                    <select value={form.role} onChange={(e) => setForm({ ...form, role: e.target.value })}>
+                      <option value="user">个人用户</option>
+                      <option value="merchant">商家</option>
+                    </select>
+                  </label>
+                </>
+              )}
+
+              <label>
+                用户名
+                <input value={form.username} onChange={(e) => setForm({ ...form, username: e.target.value })} />
+              </label>
+
+              <label>
+                密码
+                <input type="password" value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} />
+              </label>
+
+              <button type="submit">{authMode === 'login' ? '登录' : '创建账户'}</button>
+            </form>
+          </section>
+        )}
+
+        {screen === 'map' && (
+          <section className="panel map-panel">
+            <div className="section-header">
+              <h2>地图搜索</h2>
+              <button onClick={handleSearch}>搜索</button>
+            </div>
+
+            <div className="map-search-bar">
+              <input
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                placeholder="搜索川菜 / 咖啡 / 生活方式 / 旅行..."
+              />
+              <select value={radiusKm} onChange={(e) => setRadiusKm(Number(e.target.value))}>
+                <option value={1}>1公里</option>
+                <option value={5}>5公里</option>
+                <option value={10}>10公里</option>
+                <option value={20}>20公里</option>
+                <option value={50}>50公里</option>
+                <option value={200}>200公里</option>
+              </select>
+            </div>
+
+            <div className="map-surface">
+              <div className="map-visual">
+                <div className="map-center-dot" />
+                {mapPins.map((pin) => (
+                  <div
+                    key={pin.id}
+                    className="map-pin"
+                    style={{
+                      left: `${(pin.longitude - 121.2) * 3000}%`,
+                      top: `${(31.5 - pin.latitude) * 3000}%`
+                    }}
+                    title={`${pin.type}: ${pin.name}`}
+                  >
+                    {pin.type === '商家' ? 'M' : 'C'}
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div className="map-results">
+              {searchResults.merchants?.length || searchResults.posts?.length ? (
+                <>
+                  <h3>搜索结果</h3>
+                  {[...(searchResults.merchants || []), ...(searchResults.posts || [])].slice(0, 8).map((item) => (
+                    <div key={item.id} className="search-result-item">
+                      <strong>{item.name || item.title}</strong>
+                      <span>{item.category || item.type}</span>
+                    </div>
+                  ))}
+                </>
+              ) : (
+                <p>暂无结果，尝试搜索“川菜 / 咖啡 / 旅行”</p>
+              )}
+            </div>
+          </section>
+        )}
+
+        {screen !== 'auth' && screen !== 'map' && (
+          <>
+            <section className="panel" id="feed">
+              <div className="section-header">
+                <h2>信息流</h2>
+                {isLoggedIn ? <button onClick={() => setScreen('publish')}>发布内容</button> : <button onClick={() => setScreen('auth')}>登录发布</button>}
+              </div>
+
+              {posts.map((post) => (
+                <article className="post-card" key={post.id}>
+                  <div className="post-meta">
+                    <span className="author">{post.author}</span>
+                    <span className="tag">{post.type}</span>
+                    {post.latitude && post.longitude && <span className="tag map-tag">地图定位</span>}
+                  </div>
+                  <h3>{post.title}</h3>
+                  <p>{post.content}</p>
+                  {post.image && <img src={post.image} alt={post.title} />}
+                  <div className="post-actions">
+                    <span>👍 {post.stats.likes}</span>
+                    <span>💬 {post.stats.comments}</span>
+                    <span>↗ 分享</span>
+                  </div>
+                </article>
+              ))}
+            </section>
+
+            <aside className="panel" id="merchants">
+              <div className="section-header">
+                <h2>商家与交易</h2>
+              </div>
+
+              {merchants.map((merchant) => (
+                <div className="merchant-card" key={merchant.id}>
+                  <div>
+                    <h3>{merchant.name}</h3>
+                    <p>{merchant.category}</p>
+                  </div>
+                  <div className="merchant-meta">
+                    <span>⭐ {merchant.rating}</span>
+                    <span>{merchant.deliveryFee}</span>
+                    <span>{merchant.avgTime}</span>
+                  </div>
+                  <button onClick={() => placeOrder(merchant.name)} disabled={!isLoggedIn}>下单</button>
+                </div>
+              ))}
+
+              <div className="order-box" id="orders">
+                <h3>订单状态</h3>
+                <p>{orderSummary || '暂无订单'}</p>
+              </div>
+            </aside>
+          </>
+        )}
+
+        {screen === 'publish' && isLoggedIn && (
+          <section className="panel publish-panel">
+            <div className="section-header">
+              <h2>发布内容</h2>
+              <button onClick={() => setScreen('feed')}>返回</button>
+            </div>
+
+            <form className="publish-form" onSubmit={handleCreatePost}>
+              <label>
+                标题
+                <input name="title" placeholder="例如：推荐一家本地小店" />
+              </label>
+              <label>
+                类型
+                <select name="type">
+                  <option value="个人">个人</option>
+                  <option value="商家">商家</option>
+                </select>
+              </label>
+              <label>
+                媒体类型
+                <select name="mediaType">
+                  <option value="text">文本</option>
+                  <option value="image">图片</option>
+                  <option value="video">视频</option>
+                </select>
+              </label>
+              <label>
+                图片/视频链接（可选）
+                <input name="image" placeholder="https://example.com/media.jpg" />
+              </label>
+              <label>
+                内容
+                <textarea name="content" rows="6" placeholder="分享你的信息、经验或经营内容..." />
+              </label>
+              <button type="submit">发布</button>
+            </form>
+          </section>
+        )}
+      </main>
+    </div>
+  );
 }
+
+export default App;

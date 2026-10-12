@@ -1,296 +1,308 @@
-import { useEffect, useMemo, useState } from 'react';
+import express from 'express';
+import cors from 'cors';
+import dotenv from 'dotenv';
+import {
+  hashPassword,
+  comparePassword,
+  signToken,
+  verifyToken,
+  createUserRecord,
+  findUserByUsername,
+  getUserById,
+  getUsersPublicProfile
+} from './authStore.js';
 
-function App() {
-  const [screen, setScreen] = useState('feed');
-  const [authMode, setAuthMode] = useState('login');
-  const [token, setToken] = useState(localStorage.getItem('infohub_token') || '');
-  const [user, setUser] = useState(() => {
-    const raw = localStorage.getItem('infohub_user');
-    return raw ? JSON.parse(raw) : null;
-  });
-  const [form, setForm] = useState({ username: '', password: '', displayName: '', role: 'user' });
-  const [posts, setPosts] = useState([]);
-  const [merchants, setMerchants] = useState([]);
-  const [orderSummary, setOrderSummary] = useState('');
-  const [message, setMessage] = useState('');
+dotenv.config();
 
-  const isLoggedIn = useMemo(() => Boolean(token && user), [token, user]);
+const app = express();
+const PORT = process.env.PORT || 3001;
 
-  useEffect(() => {
-    loadData();
-  }, []);
+app.use(cors({ origin: process.env.CLIENT_URL || '*' }));
+app.use(express.json());
 
-  async function loadData() {
-    try {
-      const [postsResponse, merchantsResponse] = await Promise.all([
-        fetch('/api/posts'),
-        fetch('/api/merchants')
-      ]);
-
-      if (postsResponse.ok) {
-        const data = await postsResponse.json();
-        if (data.posts?.length) setPosts(data.posts);
-      }
-
-      if (merchantsResponse.ok) {
-        const data = await merchantsResponse.json();
-        if (data.merchants?.length) setMerchants(data.merchants);
-      }
-    } catch (error) {
-      console.error('Load error:', error);
-    }
-  }
-
-  async function handleAuthSubmit(event) {
-    event.preventDefault();
-    const url = authMode === 'login' ? '/api/login' : '/api/register';
-
-    try {
-      const payload = {
-        username: form.username,
-        password: form.password,
-        ...(authMode === 'register' ? { displayName: form.displayName, role: form.role } : {})
-      };
-
-      const response = await fetch(url, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload)
-      });
-
-      const result = await response.json();
-      if (!response.ok) {
-        setMessage(result.message || '认证失败');
-        return;
-      }
-
-      localStorage.setItem('infohub_token', result.token);
-      localStorage.setItem('infohub_user', JSON.stringify(result.user));
-      setToken(result.token);
-      setUser(result.user);
-      setMessage(authMode === 'login' ? '登录成功' : '注册成功');
-      setScreen('feed');
-    } catch (error) {
-      setMessage('认证服务暂时不可用');
-    }
-  }
-
-  async function handleCreatePost(event) {
-    event.preventDefault();
-    const title = event.target.title.value;
-    const content = event.target.content.value;
-    const type = event.target.type.value;
-
-    try {
-      const response = await fetch('/api/posts', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`
-        },
-        body: JSON.stringify({ title, content, type })
-      });
-
-      const result = await response.json();
-      if (!response.ok) {
-        setMessage(result.message || '发布失败');
-        return;
-      }
-
-      setPosts((prev) => [result.post, ...prev]);
-      setMessage('发布成功');
-      event.target.reset();
-    } catch (error) {
-      setMessage('发布失败，稍后重试');
-    }
-  }
-
-  async function placeOrder(merchantName) {
-    try {
-      const response = await fetch('/api/orders', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`
-        },
-        body: JSON.stringify({ merchant: merchantName, item: '今日特价套餐', amount: 68 })
-      });
-
-      const result = await response.json();
-      if (!response.ok) {
-        setOrderSummary(result.message || '订单失败');
-        return;
-      }
-
-      setOrderSummary(`${merchantName}：${result.message}`);
-    } catch (error) {
-      setOrderSummary('订单提交失败，请检查登录状态');
-    }
-  }
-
-  function logout() {
-    localStorage.removeItem('infohub_token');
-    localStorage.removeItem('infohub_user');
-    setToken('');
-    setUser(null);
-    setScreen('feed');
-    setMessage('已退出登录');
-  }
-
-  return (
-    <div className="app-shell">
-      <header className="topbar">
-        <div className="brand-wrap">
-          <div className="logo">I</div>
-          <div>
-            <h1>InfoHub</h1>
-            <small>个人信息中心 · 商户交易 · 互动社区</small>
-          </div>
-        </div>
-
-        <nav>
-          <button className="nav-button" onClick={() => setScreen('feed')}>动态</button>
-          <button className="nav-button" onClick={() => setScreen('merchants')}>商户</button>
-          {isLoggedIn ? (
-            <>
-              <span className="welcome-text">欢迎，{user.displayName}</span>
-              <button className="nav-button" onClick={logout}>退出</button>
-            </>
-          ) : (
-            <button className="nav-button" onClick={() => setScreen('auth')}>登录 / 注册</button>
-          )}
-        </nav>
-      </header>
-
-      {message && <div className="message-banner">{message}</div>}
-
-      <main className="content-grid">
-        {screen === 'auth' && !isLoggedIn && (
-          <section className="panel auth-panel">
-            <div className="section-header">
-              <h2>{authMode === 'login' ? '登录' : '注册'}</h2>
-              <div className="toggle-group">
-                <button className={authMode === 'login' ? 'active' : ''} onClick={() => setAuthMode('login')}>登录</button>
-                <button className={authMode === 'register' ? 'active' : ''} onClick={() => setAuthMode('register')}>注册</button>
-              </div>
-            </div>
-
-            <form onSubmit={handleAuthSubmit} className="auth-form">
-              {authMode === 'register' && (
-                <>
-                  <label>
-                    显示名
-                    <input value={form.displayName} onChange={(e) => setForm({ ...form, displayName: e.target.value })} />
-                  </label>
-                  <label>
-                    角色
-                    <select value={form.role} onChange={(e) => setForm({ ...form, role: e.target.value })}>
-                      <option value="user">个人用户</option>
-                      <option value="merchant">商家</option>
-                    </select>
-                  </label>
-                </>
-              )}
-
-              <label>
-                用户名
-                <input value={form.username} onChange={(e) => setForm({ ...form, username: e.target.value })} />
-              </label>
-
-              <label>
-                密码
-                <input type="password" value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} />
-              </label>
-
-              <button type="submit">{authMode === 'login' ? '登录' : '创建账户'}</button>
-            </form>
-          </section>
-        )}
-
-        {screen !== 'auth' && (
-          <>
-            <section className="panel" id="feed">
-              <div className="section-header">
-                <h2>信息流</h2>
-                {isLoggedIn ? <button onClick={() => setScreen('publish')}>发布内容</button> : <button onClick={() => setScreen('auth')}>登录发布</button>}
-              </div>
-
-              {posts.map((post) => (
-                <article className="post-card" key={post.id}>
-                  <div className="post-meta">
-                    <span className="author">{post.author}</span>
-                    <span className="tag">{post.type}</span>
-                  </div>
-                  <h3>{post.title}</h3>
-                  <p>{post.content}</p>
-                  {post.image && <img src={post.image} alt={post.title} />}
-                  <div className="post-actions">
-                    <span>👍 {post.stats.likes}</span>
-                    <span>💬 {post.stats.comments}</span>
-                    <span>↗ 分享</span>
-                  </div>
-                </article>
-              ))}
-            </section>
-
-            <aside className="panel" id="merchants">
-              <div className="section-header">
-                <h2>商家与交易</h2>
-              </div>
-
-              {merchants.map((merchant) => (
-                <div className="merchant-card" key={merchant.id}>
-                  <div>
-                    <h3>{merchant.name}</h3>
-                    <p>{merchant.category}</p>
-                  </div>
-                  <div className="merchant-meta">
-                    <span>⭐ {merchant.rating}</span>
-                    <span>{merchant.deliveryFee}</span>
-                    <span>{merchant.avgTime}</span>
-                  </div>
-                  <button onClick={() => placeOrder(merchant.name)} disabled={!isLoggedIn}>下单</button>
-                </div>
-              ))}
-
-              <div className="order-box" id="orders">
-                <h3>订单状态</h3>
-                <p>{orderSummary || '暂无订单'}</p>
-              </div>
-            </aside>
-          </>
-        )}
-
-        {screen === 'publish' && isLoggedIn && (
-          <section className="panel publish-panel">
-            <div className="section-header">
-              <h2>发布内容</h2>
-              <button onClick={() => setScreen('feed')}>返回</button>
-            </div>
-
-            <form className="publish-form" onSubmit={handleCreatePost}>
-              <label>
-                标题
-                <input name="title" placeholder="例如：推荐一家本地小店" />
-              </label>
-              <label>
-                类型
-                <select name="type">
-                  <option value="个人">个人</option>
-                  <option value="商家">商家</option>
-                </select>
-              </label>
-              <label>
-                内容
-                <textarea name="content" rows="6" placeholder="分享你的信息、经验或经营内容..." />
-              </label>
-              <button type="submit">发布</button>
-            </form>
-          </section>
-        )}
-      </main>
-    </div>
-  );
+function toRadians(value) {
+  return (value * Math.PI) / 180;
 }
 
-export default App;
+function haversineDistance(lat1, lon1, lat2, lon2) {
+  const R = 6371;
+  const dLat = toRadians(lat2 - lat1);
+  const dLon = toRadians(lon2 - lon1);
+  const a =
+    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+    Math.cos(toRadians(lat1)) * Math.cos(toRadians(lat2)) *
+    Math.sin(dLon / 2) * Math.sin(dLon / 2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  return R * c;
+}
+
+const posts = [
+  {
+    id: 1,
+    author: '小李',
+    type: '个人',
+    title: '周末自营美食分享',
+    content: '今天做了几道家常菜，欢迎来看看和交流。',
+    image: 'https://images.unsplash.com/photo-1517248135467-4c7edcad34c4?auto=format&fit=crop&w=900&q=80',
+    stats: { likes: 124, comments: 18 },
+    latitude: 31.2304,
+    longitude: 121.4737,
+    mediaType: 'image'
+  },
+  {
+    id: 2,
+    author: '西北小火锅馆',
+    type: '商家',
+    title: '招牌火锅套餐限时优惠',
+    content: '秋季新品上线，支持在线预订，欢迎提前下单。',
+    image: 'https://images.unsplash.com/photo-1552566626-52f8b828add9?auto=format&fit=crop&w=900&q=80',
+    stats: { likes: 452, comments: 72 },
+    latitude: 31.2304,
+    longitude: 121.4837,
+    mediaType: 'image'
+  },
+  {
+    id: 3,
+    author: '旅行笔记本',
+    type: '个人',
+    title: '成都美食地图游记',
+    content: '成都认真吃一顿，周边美食都很有味道。',
+    image: 'https://images.unsplash.com/photo-1504674900247-0877df9cc836?auto=format&fit=crop&w=900&q=80',
+    stats: { likes: 312, comments: 40 },
+    latitude: 30.5728,
+    longitude: 104.0668,
+    mediaType: 'image'
+  }
+];
+
+const merchants = [
+  {
+    id: 1,
+    name: '西北小火锅馆',
+    category: '餐饮',
+    rating: 4.9,
+    deliveryFee: '￥6',
+    avgTime: '25~35 分钟',
+    latitude: 31.2304,
+    longitude: 121.4837
+  },
+  {
+    id: 2,
+    name: '晨光咖啡屋',
+    category: '咖啡',
+    rating: 4.8,
+    deliveryFee: '￥3',
+    avgTime: '15~25 分钟',
+    latitude: 31.2204,
+    longitude: 121.4637
+  },
+  {
+    id: 3,
+    name: '川味私房菜',
+    category: '川菜',
+    rating: 4.7,
+    deliveryFee: '￥8',
+    avgTime: '20~30 分钟',
+    latitude: 31.2404,
+    longitude: 121.4737
+  }
+];
+
+function requireAuth(req, res, next) {
+  const authHeader = req.headers.authorization || '';
+  const token = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : null;
+
+  if (!token) {
+    return res.status(401).json({ message: 'Authentication required' });
+  }
+
+  try {
+    const decoded = verifyToken(token);
+    const user = getUserById(decoded.id);
+
+    if (!user) {
+      return res.status(401).json({ message: 'User no longer exists' });
+    }
+
+    req.user = {
+      id: user.id,
+      username: user.username,
+      displayName: user.displayName,
+      role: user.role
+    };
+    return next();
+  } catch (error) {
+    return res.status(401).json({ message: 'Invalid or expired token' });
+  }
+}
+
+app.get('/api/health', (req, res) => {
+  res.json({ ok: true, message: 'Center backend is running' });
+});
+
+app.post('/api/register', async (req, res) => {
+  const { username, password, displayName, role } = req.body || {};
+
+  if (!username || !password || !displayName) {
+    return res.status(400).json({ message: 'username, password and displayName are required' });
+  }
+
+  if (findUserByUsername(username)) {
+    return res.status(409).json({ message: 'Username already exists' });
+  }
+
+  const hashedPassword = await hashPassword(password);
+  const user = createUserRecord({
+    username,
+    password: hashedPassword,
+    displayName,
+    role: role === 'merchant' ? 'merchant' : 'user'
+  });
+
+  const token = signToken(user);
+
+  return res.status(201).json({
+    message: 'User registered successfully',
+    token,
+    user: {
+      id: user.id,
+      username: user.username,
+      displayName: user.displayName,
+      role: user.role
+    }
+  });
+});
+
+app.post('/api/login', async (req, res) => {
+  const { username, password } = req.body || {};
+
+  if (!username || !password) {
+    return res.status(400).json({ message: 'username and password are required' });
+  }
+
+  const user = findUserByUsername(username);
+  if (!user) {
+    return res.status(401).json({ message: 'Invalid username or password' });
+  }
+
+  const isValid = await comparePassword(password, user.password);
+  if (!isValid) {
+    return res.status(401).json({ message: 'Invalid username or password' });
+  }
+
+  const token = signToken(user);
+
+  return res.json({
+    message: 'Login success',
+    token,
+    user: {
+      id: user.id,
+      username: user.username,
+      displayName: user.displayName,
+      role: user.role
+    }
+  });
+});
+
+app.get('/api/me', requireAuth, (req, res) => {
+  res.json({ user: req.user });
+});
+
+app.get('/api/users', requireAuth, (req, res) => {
+  res.json({ users: getUsersPublicProfile() });
+});
+
+app.get('/api/posts', (req, res) => {
+  res.json({ posts });
+});
+
+app.get('/api/search', (req, res) => {
+  const keyword = (req.query.keyword || '').trim().toLowerCase();
+  const radius = Number(req.query.radius || 10);
+  const latitude = Number(req.query.latitude || 31.2304);
+  const longitude = Number(req.query.longitude || 121.4737);
+
+  const matches = posts.filter((post) => {
+    const haystack = `${post.title} ${post.content} ${post.author} ${post.type}`.toLowerCase();
+    const matchesKeyword = !keyword || haystack.includes(keyword);
+    if (!matchesKeyword) return false;
+
+    if (post.latitude && post.longitude) {
+      const distance = haversineDistance(latitude, longitude, post.latitude, post.longitude);
+      return distance <= radius;
+    }
+
+    return true;
+  });
+
+  const merchantMatches = merchants.filter((merchant) => {
+    const haystack = `${merchant.name} ${merchant.category}`.toLowerCase();
+    const matchesKeyword = !keyword || haystack.includes(keyword);
+    if (!matchesKeyword) return false;
+
+    if (merchant.latitude && merchant.longitude) {
+      const distance = haversineDistance(latitude, longitude, merchant.latitude, merchant.longitude);
+      return distance <= radius;
+    }
+
+    return true;
+  });
+
+  res.json({
+    keyword,
+    center: { latitude, longitude, radius },
+    posts: matches,
+    merchants: merchantMatches
+  });
+});
+
+app.post('/api/posts', requireAuth, (req, res) => {
+  const { title, content, type = '个人', image = null, mediaType = 'text', latitude, longitude } = req.body || {};
+
+  if (!title || !content) {
+    return res.status(400).json({ message: 'title and content are required' });
+  }
+
+  const newPost = {
+    id: Date.now(),
+    author: req.user.displayName,
+    type: req.user.role === 'merchant' ? '商家' : type,
+    title,
+    content,
+    image,
+    mediaType,
+    latitude: latitude !== undefined ? Number(latitude) : 31.2304,
+    longitude: longitude !== undefined ? Number(longitude) : 121.4737,
+    stats: { likes: 0, comments: 0 }
+  };
+
+  posts.unshift(newPost);
+  return res.status(201).json({ message: 'Post created', post: newPost });
+});
+
+app.get('/api/merchants', (req, res) => {
+  res.json({ merchants });
+});
+
+app.post('/api/orders', requireAuth, (req, res) => {
+  const { merchant, item, amount } = req.body || {};
+
+  if (!merchant || !item || !amount) {
+    return res.status(400).json({ message: 'merchant, item and amount are required' });
+  }
+
+  return res.status(201).json({
+    message: `订单创建成功，商家：${merchant}，金额：￥${amount}`,
+    order: {
+      merchant,
+      item,
+      amount,
+      user: req.user.displayName,
+      status: 'pending_payment'
+    }
+  });
+});
+
+app.listen(PORT, () => {
+  console.log(`Center backend running on http://localhost:${PORT}`);
+});
